@@ -5,9 +5,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 core = (ROOT / "ledgertool" / "ledger_core.py").read_text(encoding="utf-8")
-cli  = (ROOT / "ledgertool" / "ledger.py").read_text(encoding="utf-8")
+cli = (ROOT / "ledgertool" / "ledger.py").read_text(encoding="utf-8")
 licp = ROOT / "LICENSE"
-lic  = licp.read_text(encoding="utf-8") if licp.exists() else ""
+lic = licp.read_text(encoding="utf-8") if licp.exists() else ""
 
 lic_cmt = "\n".join("# " + ln for ln in lic.splitlines()) if lic else ""
 banner = (
@@ -20,8 +20,12 @@ banner = (
 
 out = (
     banner
-    + "\n# === BEGIN ledger_core.py ===\n" + core + "\n# === END ledger_core.py ===\n\n"
-    + "# === BEGIN ledger.py (CLI) ===\n" + cli + "\n# === END ledger.py ===\n"
+    + "\n# === BEGIN ledger_core.py ===\n"
+    + core
+    + "\n# === END ledger_core.py ===\n\n"
+    + "# === BEGIN ledger.py (CLI) ===\n"
+    + cli
+    + "\n# === END ledger.py ===\n"
 )
 
 dist = ROOT / "dist"

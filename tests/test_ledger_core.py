@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: MIT
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.abspath("ledgertool"))
 import ledger_core as lc  # noqa: E402
+
 
 def test_list_and_ledger(tmp_path):
     (tmp_path / "p1.png").write_bytes(b"")
