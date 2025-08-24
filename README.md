@@ -1,4 +1,4 @@
-# dikum
+# DIKUM
 Dialog Integrated Komawari Utility for Japanese-style Manga 
 
 ## Ledger tool (minimal CSV edition)
