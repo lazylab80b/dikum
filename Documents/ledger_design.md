@@ -35,7 +35,6 @@
   - プロジェクトの成果を保存したり、別スレッドで作業を再開するために作成するアーカイブファイル。
   - プロジェクトフォルダ内の全ファイル(台帳スナップショットを含む)をzipで圧縮したもの。
   
-- `t` は ISO8601 UTC（例: `"2025-08-23T12:34:56Z"`）。
 - 画像ファイル識別は、ファイルサイズで簡易チェック後に、`md5`での比較が主軸。必要に応じ `raw`（RAW RGBAハッシュ）も併記。
   - ブラウザからのアップロードであれば、PNGのraw情報は維持されることを確認済(PNGメタは削られる)
   - モバイルアプリからアップロードすると、解像度も変わってJPEGで再エンコードされるためMD5などで識別不能となることを確認済み。よって、アプリからのアップロードは避けるべきである。
@@ -47,11 +46,10 @@
   - 上位の包括概念。失われた状態を元に戻す一連の作業全体を指す。
 
 - 再構築（rebuild）
-  - 台帳 `ledger.jsonl` を **checkpoint + その後の差分（stdout の `LEDGER>>` 行）**から再構成すること。
+  - 台帳 `ledger.jsonl` を **checkpoint + その後の差分**（stdout の `LEDGER>>` 行）から再構成すること。
 
 - 再展開（restore）
   - 台帳の `index` と `org` を解決し、**blob／pack** から実ファイルを `/mnt/data/<proj>/` に **再展開**して、プロジェクトフォルダ構成を再現すること。
-  - 宛先が既存で `md5` 一致の場合はコピーをスキップ。
 
 - 迷子（lost）
   - プロジェクト下に存在するが、台帳に記録が無い／`org` が未設定・不整合なファイル。  
@@ -128,7 +126,7 @@
 ---
 ## 台帳管理スクリプト(ledger.py)のサブコマンド動作仕様
 
-### 復元（restore）
+### 再展開（restore）
 
 1. `proj` レコードから `<proj>` を決定し、必要な `dirs` を mkdir。  
 2. 各 `index` の 由来(`org`) を解決して、宛先(`p`)にコピー。
@@ -175,17 +173,13 @@
 - **課題**: `/mnt/data/ledger.jsonl` 自体が短命で消える可能性がある。
 - **対策**:
   1) レコードを追加するたび **そのJSON行を stdout に出力**（会話履歴へ残す）。  
-  2) 一定間隔で **checkpoint（cp）を自動生成**し、**正規化（コンパクション）**した台帳で置き換える。  
+  2) 一定間隔で **checkpoint（cp）を自動生成**し、 **正規化（コンパクション）** した台帳で置き換える。  
   3) checkpoint 時は **スナップショット全文を stdout に出力**（履歴からの再構築を容易にする）。
-
----
 
 ### 自動発火トリガ
 - 直近の cp 以降に追加された **`index` レコードが N 件（既定: 32）** に達したら自動発火。  
   - CLI オプション例: `--cp-threshold N`  
 - 任意で **時間閾値**（例: 最終 cp から30分）も実装可（`--cp-max-age`）。
-
----
 
 ### cp レコード（台帳に追記するメタ行）
 ```json
@@ -198,8 +192,6 @@
 ```
 - **判定は O(1)**: `since = current_total_index - last_cp.total_index` が `>= 閾値` なら発火。
 
----
-
 ### 正規化（コンパクション）ルール
 - `proj` …… **最後の1行**のみ保持。  
 - `pack` …… **同一 `id` の最後勝ち**。  
@@ -209,15 +201,11 @@
 
 > 出力順は推奨で安定化：`proj` → `pack*` → `index*` → `export/import*`
 
----
-
 ### アトミック更新フロー
 1) 正規化済み全文を `/mnt/data/ledger.jsonl.tmp` に書き出し（UTF-8 / LF）。  
 2) 任意で旧版を `/mnt/data/ledger.jsonl.bak` に退避。  
 3) `rename(tmp, ledger.jsonl)` で **アトミック置換**。  
 4) 直後に **cp レコードを1行追記**（append-only を維持）。
-
----
 
 ### stdout 出力フォーマット（履歴保存）
 - 平時（各追記時）:  
@@ -230,14 +218,10 @@
      `LEDGER>> { ... }`  
   3) `CHECKPOINT_END {"t":"...","seq":N,"lines":L,"sha256":"..."}`
 
----
-
 ### 再構築手順（台帳消失時）
 1) 会話履歴から **最新の `CHECKPOINT_BEGIN ...` ～ `CHECKPOINT_END ...` ブロック**を見つけ、  
    `LEDGER>>` 行を復元して `/mnt/data/ledger.jsonl` を再生成（`sha256`で正規化済み全文と照合）。  
 2) その後に続く **追加の `LEDGER>>` 差分行**を順に append するだけで **完全復元**。
-
----
 
 ### 実装メモ（`ledger_core` 側）
 - 起動時に ledger.jsonl を走査して  
@@ -248,6 +232,86 @@
 - `compact_and_checkpoint()` は  
   - 正規化 → `.tmp` へ書き出し → `rename` → cp 追記 → stdout へ CP ブロック吐き出し  
   の順に実行。
+
+---
+## 付録: 配布用バンドル方針（B方式：静的フラット結合 / 審査=本番 1ファイル）
+
+### 結論
+- **B方式（静的フラット結合）**を採用する。  
+- **動的ローダや埋め込みインポータは使わない**。審査時・本番時ともまったく同じ **単一 `ledger.py`** を提出・実行する。  
+- 開発は分割モジュールで行い、**最終ビルド時のみ結合**する。
+
+### ルール（開発時の分割コード）
+- **内部参照は統一**：`from dikum.X import Name` 形式のみを使用（`import dikum.X as m` は禁止）。  
+- **循環 import を作らない**（層を「records → core → cli → entry」の順に）。  
+- **トップレベルの副作用を避ける**（定義中心、実行は `main()` で）。
+
+### バンドラ仕様（`scripts/bundle.py`）
+- **結合順はコマンドライン引数の並びをそのまま使用**（依存解析は行わない）。  
+- **内部 import の無効化**：行頭が `from <prefix>... import ...`（既定 `dikum.`）の行だけを**コメントアウト**。  
+- 各セクションにヘッダコメント：`# ── BEGIN <path> (sha256=..., lines=...)` を付与し、**元ソースをそのまま連結**。  
+- 先頭にビルドバナー（UTC時刻、注意書き）を付与。  
+- 出力先は例として `GPTs/ledger.py`。
+
+#### 使い方（例）
+```bash
+python scripts/bundle.py \
+  ledgertool/records.py \
+  ledgertool/timeutil.py \
+  ledgertool/ledger_jsonl.py \
+  ledgertool/ledger_cli.py \
+  tools/entrypoint.py \
+  -o GPTs/ledger.py \
+  --internal-prefix dikum.
+```
+
+#### 最終 `ledger.py` のテキストファイルとしての見た目
+- すべて「**生のPythonコード**」として並ぶため、**色付け・静的解析**が有効。  
+- 内部 import の行のみ先頭に `# ` が付き無効化される（可視で安全）。  
+- 上から下へ **依存順** に並べるだけで解決（`IndexRec` → `Ledger` → `main`）。
+
+### ファイル枠の考え方（カスタムGPTs）
+- Knowledge枠は **最大20ファイル**のため、スクリプトは**3〜5ファイル以内**に抑えるのが望ましい。  
+- **YAMLテンプレ**や**素材画像パック**を同梱する余地を確保する。素材は **zip** にまとめて1ファイル化を推奨。
+
+---
+## 将来拡張計画: `pack`（素材パック）機能と `restore` の取り扱い
+
+将来バージョンでpackに対応する場合、packから素材ファイルを取り出してプロジェクトフォルダ内に配置(かつ、`index`化)することと、`restore`での再展開に対応する必要がある。このため、CLIに`pack`サブコマンドを追加する予定。
+
+### 現バージョンの方針
+- **実装は見送り**（vNextで着手）。今回は**呼び出し口だけ**用意し、明確に「未対応」と返す。  
+- `org` の取り扱いは現状維持：`blob://<name>` は `/mnt/data/<name>` を指す。`pack://<id>/<path>` は**未対応**。
+
+### Ledger 側のフック（導入済みインタフェース）
+- `Ledger.resolve_org(org: str) -> str`  
+  - `blob://...`：実ファイルパス（`/mnt/data/...`）を返す。  
+  - `pack://...`：**NotImplemented** を送出（vNextで zip 展開パスを返す予定）。  
+  - 将来 `path://...` 等の拡張にも対応可能。
+
+### CLI: `pack` サブコマンド（現状は未対応メッセージ）
+- 追加済みインタフェース（vNextで有効化）：
+  - `pack extract --pack <id> --member <path> -o <dir>`
+  - `pack list --pack <id>`
+- 現バージョンの挙動：いずれも**終了コード2**で「未対応」を明示。
+
+### vNext の実装予定
+1. **PackManager**（新規）  
+   - `packs_root=/mnt/data/packs` 想定。  
+   - `list()`／`extract(pack_id, member_path, out_dir)`／`extract_by_pattern(pack_id, pattern, out_dir)` を提供。  
+   - `zipfile` で展開し、UTF-8正規化・上書きガード・出力先の作成を行う。
+2. **restore の拡張**  
+   - `index.org` が `pack://<id>/<path>` の場合、PackManagerで展開し、`p` にコピー（既存MD5一致ならスキップ、`--force` で上書き）。  
+3. **pack サブコマンド有効化**  
+   - `pack extract`：展開後に `--index` オプションで `index` 追記（`org=pack://...` を保持、`md5/sz` 計算）。  
+   - `pack list`：pack 内部の一覧とメタを表示（最大件数制限あり）。
+4. **README/ヘルプ更新**  
+   - `pack` の使い方、`restore` における `pack://` 解決の挙動を追記。
+
+### 互換性ノート
+- 現行の `index` スキーマ（`org` に `blob://`/`pack://` を許容）は**据え置き**で将来互換を確保。  
+- vNext で `pack://` の実体化を追加しても、既存台帳の意味は変わらない。  
+- `checkpoint`/`LEDGER>>` 仕様にも影響なし（展開はファイルシステム側の操作で、台帳は通常どおり追記する）。
 
 ---
 
