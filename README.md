@@ -14,3 +14,6 @@ Bundle single-file for GPTs:
 python scripts/bundle.py
 # => dist/ledger.py
 ```
+
+---
+## This line is added and comitted by AI itself
